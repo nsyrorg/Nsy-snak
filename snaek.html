@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>الأحرار والكلب بشار</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+      border-radius: 10px;
+    }
+    .menu, .pause-menu {
+      position: absolute;
+      color: white;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+    .menu {
+      width: 350px;
+      text-align: center;
+    }
+    .pause-menu {
+      width: 300px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      border: 2px solid #fff;
+    }
+    .menu button, .pause-menu button {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin: 10px 0;
+      background-color: #333;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+      width: 80%;
+      transition: background-color 0.3s;
+    }
+    .menu button:hover, .pause-menu button:hover {
+      background-color: #555;
+    }
+    .pause-menu input[type="range"] {
+      width: 80%;
+      margin: 10px 0;
+    }
+    h1, h2 {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+    p {
+      font-size: 16px;
+      margin: 10px 0;
+    }
+    #menuImage {
+      width: 100%;
+      height: auto;
+      margin-bottom: 15px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="menu" id="menu">
+    <img id="menuImage" src="https://i.imgur.com/TVHNYUI.png" alt="Tank Image">
+    <h1>الأحرار والكلب بشار</h1>
+    <p>اختر مستوى التحدي وابدأ مغامرتك!</p>
+    <button id="easyBtn">سهل</button>
+    <button id="mediumBtn">متوسط</button>
+    <button id="hardBtn">صعب</button>
+    <p>استخدم مفاتيح الأسهم للتحكم. اضغط على ESC لإيقاف اللعبة.</p>
+  </div>
+  <div class="pause-menu" id="pauseMenu">
+    <h2>اللعبة متوقفة</h2>
+    <button id="resumeBtn">إكمال اللعبة</button>
+    <button id="mainMenuBtn">العودة للقائمة الرئيسية</button>
+    <button id="quitBtn">إنهاء اللعبة</button>
+    <label for="volumeSlider">الصوت:</label>
+    <input type="range" id="volumeSlider" min="0" max="1" step="0.1" value="0.5">
+  </div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const tank = new Image();
+    tank.src = 'https://i.imgur.com/TVHNYUI.png';
+
+    const missile = new Image();
+    missile.src = 'https://i.imgur.com/CV2LVwV.png';
+
+    const background = new Image();
+    background.src = 'https://dthezntil550i.cloudfront.net/ek/latest/ek1707231846311020002901992/1280_960/a43e8d94-d374-45b9-beb3-3af406586aee.png';
+
+    const explosionSound = new Audio('https://cdn.pixabay.com/download/audio/2023/02/18/audio_cb1a2369fe.mp3?filename=a-bomb-139689.mp3');
+    const scoreSound = new Audio('https://cdn.pixabay.com/download/audio/2022/03/10/audio_b3f26cf7fe.mp3?filename=falling-bomb-41038.mp3');
+
+    explosionSound.volume = 0.5;
+    scoreSound.volume = 0.5;
+
+    const player = { x: 370, y: 520, width: 60, height: 60 };
+    const missiles = [];
+    const bullets = [];
+    let score = 0;
+    let gameOver = false;
+    let gameStarted = false;
+    let paused = false;
+    let missileSpeed = 3;
+    let missileInterval = 1000;
+    let missileTimer = null;
+    let bulletSpeed = 7;
+    let level = 'medium';
+
+    const menu = document.getElementById('menu');
+    const pauseMenu = document.getElementById('pauseMenu');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const mainMenuBtn = document.getElementById('mainMenuBtn');
+    const quitBtn = document.getElementById('quitBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+
+    menu.style.display = 'block';
+    pauseMenu.style.display = 'none';
+
+    const startGame = (difficulty) => {
+      level = difficulty;
+      missileSpeed = level === 'easy' ? 2 : level === 'medium' ? 3 : 5;
+      missileInterval = level === 'easy' ? 1500 : level === 'medium' ? 1000 : 500;
+      bulletSpeed = level === 'hard' ? 7 : 5;
+      menu.style.display = 'none';
+      gameStarted = true;
+      paused = false;
+      gameOver = false;
+      score = 0;
+      missiles.length = 0;
+      bullets.length = 0;
+      startMissileSpawner();
+      updateGame();
+    };
+
+    const startMissileSpawner = () => {
+      if (missileTimer) clearInterval(missileTimer);
+      missileTimer = setInterval(() => {
+        if (!paused && !gameOver) addMissile();
+      }, missileInterval);
+    };
+
+    const addMissile = () => {
+      const missileX = Math.random() * (canvas.width - 30);
+      missiles.push({ x: missileX, y: -50, width: 20, height: 50, speed: missileSpeed });
+    };
+
+    const addBullet = () => {
+      bullets.push({ x: player.x + player.width / 2 - 5, y: player.y, width: 10, height: 20 });
+    };
+
+    const updateGame = () => {
+      if (!gameStarted || paused) return;
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = '30px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`النقاط: ${score}`, canvas.width / 2, canvas.height / 2 - 40);
+        if (score >= getMaxScore()) {
+          ctx.fillText('مبروك سوريا حرة تم دعس بشار الأسد! 🎉😊', canvas.width / 2, canvas.height / 2);
+        } else {
+          ctx.fillText('خسرت للأسف! حاول مرة أخرى. 😞', canvas.width / 2, canvas.height / 2);
+        }
+        ctx.fillText('اضغط Enter لإعادة اللعب', canvas.width / 2, canvas.height / 2 + 40);
+        return;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
+      drawTank();
+      drawMissiles();
+      drawBullets();
+      updateMissiles();
+      updateBullets();
+      checkCollision();
+      drawScore();
+      checkLevelEnd();
+      requestAnimationFrame(updateGame);
+    };
+
+    const drawTank = () => {
+      ctx.drawImage(tank, player.x, player.y, player.width, player.height);
+    };
+
+    const drawBackground = () => {
+      ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+    };
+
+    const drawMissiles = () => {
+      missiles.forEach(missileObj => {
+        ctx.drawImage(missile, missileObj.x, missileObj.y, missileObj.width, missileObj.height);
+      });
+    };
+
+    const drawBullets = () => {
+      bullets.forEach(bullet => {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+      });
+    };
+
+    const updateMissiles = () => {
+      missiles.forEach((missileObj, index) => {
+        missileObj.y += missileObj.speed;
+        if (missileObj.y > canvas.height) {
+          missiles.splice(index, 1);
+        }
+      });
+    };
+
+    const updateBullets = () => {
+      bullets.forEach((bullet, index) => {
+        bullet.y -= bulletSpeed;
+        if (bullet.y < 0) {
+          bullets.splice(index, 1);
+        }
+      });
+    };
+
+    const checkCollision = () => {
+      missiles.forEach((missileObj, missileIndex) => {
+        if (missileObj.x < player.x + player.width &&
+            missileObj.x + missileObj.width > player.x &&
+            missileObj.y < player.y + player.height &&
+            missileObj.y + missileObj.height > player.y) {
+          gameOver = true;
+        }
+        bullets.forEach((bullet, bulletIndex) => {
+          if (bullet.x < missileObj.x + missileObj.width &&
+              bullet.x + bullet.width > missileObj.x &&
+              bullet.y < missileObj.y + missileObj.height &&
+              bullet.y + bullet.height > missileObj.y) {
+            missiles.splice(missileIndex, 1);
+            bullets.splice(bulletIndex, 1);
+            score += level === 'hard' ? 20 : 10;
+            explosionSound.play();
+          }
+        });
+      });
+    };
+
+    const drawScore = () => {
+      ctx.fillStyle = '#fff';
+      ctx.font = '20px Arial';
+      ctx.fillText(`Score: ${score}`, 10, 30);
+    };
+
+    const getMaxScore = () => {
+      if (level === 'easy') return 200;
+      if (level === 'medium') return 500;
+      return 1000;
+    };
+
+    const checkLevelEnd = () => {
+      if (score >= getMaxScore()) {
+        gameOver = true;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = '30px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`مستوى مكتمل! النقاط: ${score}`, canvas.width / 2, canvas.height / 2 - 40);
+      }
+    };
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' && player.x > 0) player.x -= 15;
+      if (e.key === 'ArrowRight' && player.x + player.width < canvas.width) player.x += 15;
+      if (e.key === 'ArrowUp' && player.y > 0) player.y -= 15;
+      if (e.key === 'ArrowDown' && player.y + player.height < canvas.height) player.y += 15;
+      if (e.key === ' ' && !paused && !gameOver) {
+        addBullet();
+      }
+      if (e.key === 'Enter' && gameOver) {
+        gameOver = false;
+        startGame(level);
+      }
+      if (e.key === 'Escape') {
+        if (paused) {
+          paused = false;
+          pauseMenu.style.display = 'none';
+          updateGame();
+        } else {
+          paused = true;
+          pauseMenu.style.display = 'block';
+        }
+      }
+    });
+
+    resumeBtn.addEventListener('click', () => {
+      paused = false;
+      pauseMenu.style.display = 'none';
+      updateGame();
+    });
+
+    mainMenuBtn.addEventListener('click', () => {
+      menu.style.display = 'block';
+      pauseMenu.style.display = 'none';
+      gameStarted = false;
+      gameOver = false;
+    });
+
+    quitBtn.addEventListener('click', () => {
+      window.close();
+    });
+
+    easyBtn.addEventListener('click', () => startGame('easy'));
+    mediumBtn.addEventListener('click', () => startGame('medium'));
+    hardBtn.addEventListener('click', () => startGame('hard'));
+
+    volumeSlider.addEventListener('input', () => {
+      const volume = volumeSlider.value;
+      explosionSound.volume = volume;
+      scoreSound.volume = volume;
+    });
+  </script>
+</body>
+</html>
